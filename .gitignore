@@ -1,0 +1,7 @@
+firmware/statchain/secrets.h
+build/
+*.bin
+*.elf
+.DS_Store
+node_modules/
+dist/

@@ -1,0 +1,20 @@
+{
+  "name": "statchain",
+  "private": true,
+  "type": "module",
+  "description": "Statchain companion web app, mock device and tests",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "app": "node tools/serve-app.mjs",
+    "mock": "node tools/mock-device/server.mjs",
+    "test": "node --test \"tests/unit/*.test.mjs\" \"tests/integration/*.test.mjs\"",
+    "test:e2e": "node --test --test-timeout=900000 tests/e2e/app.e2e.mjs",
+    "build:app": "node tools/build-app.mjs",
+    "check:app": "node tools/build-app.mjs --check"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
