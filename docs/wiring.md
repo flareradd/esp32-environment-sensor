@@ -76,8 +76,8 @@ The ESP32-C3 has only 13 usable GPIOs, and this design needs 12 signals, so the 
   display. This is the intended setup.
 * If you must flash over UART instead, disconnect the display's BUSY and RST wires (GPIO20/21) first,
   and pull GPIO9 low while resetting to enter the bootloader.
-* If the module boot-loops after flashing, try the DIO flash mode:
-  `--fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc,FlashMode=dio`.
+* The firmware already builds for DIO flash mode at 80 MHz (the ESP32-C3 default), which these modules
+  accept. If one still boot-loops, try `FlashFreq=40` (`--fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=no_ota,FlashFreq=40`).
 * The module needs a regulated 3.3 V supply (an LDO with low quiescent current suits a battery). Take the
   battery-divider tap from the battery side, before the regulator.
 

@@ -59,9 +59,11 @@ static void drawDisplay() {
 static void displayTick(uint32_t now) {
   if (screenBusy()) return;
   if (!app.displayDrawn) {
-    // First picture: wait for a first sound reading, and for the clock if Wi-Fi is on its way.
+    // First picture: once there are readings and the clock, or after a grace period regardless. The
+    // grace period matters on a half-wired board (a sensor missing would otherwise leave the screen
+    // blank forever): it draws anyway, with "--" for whatever is absent.
     const bool haveData = !isnan(app.now.tempC) && !isnan(app.now.soundDb);
-    if (haveData && (timeIsValid() || now > DISPLAY_FIRST_DRAW_TIMEOUT_MS)) drawDisplay();
+    if ((haveData && timeIsValid()) || now > DISPLAY_FIRST_DRAW_TIMEOUT_MS) drawDisplay();
   } else if (refreshRequested || due(now, app.nextDisplayMs)) {
     drawDisplay();
   }
@@ -197,6 +199,16 @@ void loop() {
   dayTick(now);
   logTick(now);
   displayTick(now);
+
+  // Repeat where to find the app. The USB serial port only appears after the board has booted, so
+  // the boot messages are usually missed by a serial monitor opened afterwards.
+  static uint32_t nextNetNoteMs = 5000;
+  if (due(now, nextNetNoteMs)) {
+    nextNetNoteMs = now + 30000;
+    const String ip = netIp();
+    if (ip.length()) Serial.printf("[net] open http://%s%s\n", ip.c_str(), netApActive() ? "  (device hotspot)" : "");
+    else Serial.println("[net] not connected to Wi-Fi yet");
+  }
 
   // While the mic is running the I2S read paces the loop; otherwise give the CPU a rest.
   if (!soundBusy()) delay(5);

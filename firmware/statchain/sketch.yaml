@@ -1,7 +1,28 @@
-# arduino-cli picks these up when you run it from this folder:
-#   arduino-cli compile
-#   arduino-cli upload -p <port>
-# USB CDC On Boot is required (see config.h): GPIO20/21 are used by the display.
-# PartitionScheme=no_ota matches partitions.csv in this folder (which is what actually sets the flash layout);
-# it is here so the tool reports the size limit against the 2 MB app partition, not the 1.25 MB default.
+# arduino-cli reads this when you run it from this folder, so a first build needs no manual setup:
+#
+#   arduino-cli compile                  # downloads the pinned ESP32 core and libraries on first use
+#   arduino-cli upload -p <port>         # e.g. /dev/ttyACM0, COM5, /dev/cu.usbmodem1101
+#
+# Versions are pinned so everyone builds the same thing. These are the ones the firmware was tested with.
+# CDCOnBoot=cdc is required (see config.h): GPIO20/21 are used by the display, so Serial must be USB.
+# PartitionScheme=no_ota matches partitions.csv in this folder (which is what actually sets the flash
+# layout); it makes the tool report the size limit against the 2 MB program partition.
+default_profile: statchain
+
+profiles:
+  statchain:
+    fqbn: esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=no_ota
+    platforms:
+      - platform: esp32:esp32 (3.3.12)
+        platform_index_url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+    libraries:
+      - GxEPD2 (1.6.9)
+      - Adafruit GFX Library (1.13.0)
+      - Adafruit BusIO (1.17.4)
+      - Adafruit Unified Sensor (1.1.15)
+      - Adafruit AHTX0 (2.0.6)
+      - Adafruit BMP280 Library (3.0.0)
+
+# Used by the Arduino IDE and by arduino-cli when no profile is selected (--profile is not given and
+# default_profile is removed). The profile above is the supported path.
 default_fqbn: esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=no_ota

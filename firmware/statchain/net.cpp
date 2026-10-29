@@ -14,6 +14,12 @@ static void startAp() {
   // Station stays on (if configured) so the device can still join the network when it appears.
   WiFi.mode(WIFI_SSID[0] ? WIFI_AP_STA : WIFI_AP);
   apOn = WiFi.softAP(apName.c_str(), AP_PASS);
+  if (apOn) {
+    Serial.printf("Hotspot \"%s\" is up (password \"%s\"). Join it, then open http://%s\n", apName.c_str(), AP_PASS,
+                  WiFi.softAPIP().toString().c_str());
+  } else {
+    Serial.println("Could not start the hotspot");
+  }
 }
 
 static void stopAp() {
@@ -47,7 +53,12 @@ void netBegin() {
 
 void netLoop() {
   const uint32_t now = millis();
+  static bool announced = false;  // print the address once per connection, so it can be found in the serial log
   if (WiFi.status() == WL_CONNECTED) {
+    if (!announced) {
+      announced = true;
+      Serial.printf("Wi-Fi connected. Open http://%s  (or http://" HOSTNAME ".local)\n", WiFi.localIP().toString().c_str());
+    }
     if (connectedSinceMs == 0) connectedSinceMs = now ? now : 1;
     offlineSinceMs = now;
     if (!sntpOn) {
@@ -61,6 +72,7 @@ void netLoop() {
     // Once the real network has been stable for a bit, the fallback hotspot isn't needed.
     if (apOn && WIFI_SSID[0] && now - connectedSinceMs > 10000) stopAp();
   } else {
+    announced = false;
     connectedSinceMs = 0;
     if (!apOn && now - offlineSinceMs > AP_FALLBACK_AFTER_MS) startAp();
   }

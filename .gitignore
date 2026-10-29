@@ -4,3 +4,4 @@ build/
 *.elf
 .DS_Store
 node_modules/
+dist/

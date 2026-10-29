@@ -17,7 +17,7 @@ Every chart has a table view and works from the keyboard (arrow keys read values
 
 ## Using it
 
-1. Flash the firmware (see the [README](../README.md#build-and-flash)).
+1. Flash the firmware (see the [flashing guide](flashing.md)).
 2. On a phone or computer on the same Wi-Fi, open **`http://statchain.local`**. On Android, or anywhere
    `.local` names don't resolve, use the device's IP address (printed in the serial log, or in your router).
 3. If the device can't join your Wi-Fi it starts its own hotspot, `Statchain-XXXX`. Join that and open

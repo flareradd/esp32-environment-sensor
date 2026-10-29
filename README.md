@@ -4,10 +4,10 @@ A keychain-sized environment monitor on an ESP32-C3. It measures sound level, te
 pressure and battery, shows them on a 2.13" e-ink screen, logs them to flash, and serves its own companion
 web app over Wi-Fi: open the device's address in any browser, no install and nothing to host.
 
-**Status:** firmware v0.1 with the companion app v0.1 built into it. Both are tested on a PC (see
-[Verification](#verification) and [docs/app.md](docs/app.md)), but **nothing has been run on real hardware
-yet**: the app has only met a mock of the device, and the firmware has only been compiled. Expect some
-bring-up work.
+**Status:** firmware v0.1 with the companion app v0.1 built into it. It builds from a fresh checkout and the
+images validate (see [Verification](#verification)), but **nothing has been run on real hardware yet**: the
+app has only met a mock of the device, and the firmware has only been compiled. The first flash is the
+first real test; [docs/flashing.md](docs/flashing.md) says what to expect. Expect some bring-up work.
 
 ## Hardware
 
@@ -31,29 +31,30 @@ bring-up work.
 
 ## Build and flash
 
-You need `arduino-cli` (or the Arduino IDE with the same settings). Tested with ESP32 core 3.3.12.
+**Full guide, including flashing a ready-made image and what to expect on first boot: [docs/flashing.md](docs/flashing.md).**
+
+With [arduino-cli](https://arduino.github.io/arduino-cli/latest/installation/) there is nothing else to install: the
+ESP32 core and libraries are pinned in `firmware/statchain/sketch.yaml` and download on first use.
 
 ```sh
-arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-arduino-cli core update-index
-arduino-cli core install esp32:esp32
-arduino-cli lib install GxEPD2 "Adafruit GFX Library" "Adafruit AHTX0" "Adafruit BMP280 Library"
-
 cd firmware/statchain
-cp secrets.example.h secrets.h        # then put your Wi-Fi name and password in it
-arduino-cli compile                   # board and options come from sketch.yaml
-arduino-cli upload -p /dev/ttyACM0
+cp secrets.example.h secrets.h        # your Wi-Fi name and password; skip it and the device starts a hotspot
+arduino-cli compile                   # first run downloads ~1.8 GB of pinned toolchain
+arduino-cli upload -p /dev/ttyACM0    # your port: arduino-cli board list
 arduino-cli monitor -p /dev/ttyACM0 -c baudrate=115200
 ```
 
+No toolchain? `node tools/package-firmware.mjs` writes ready-to-flash images to `dist/`, flashed with esptool or
+a browser flasher: see the guide.
+
+**USB CDC On Boot must be enabled** (the build fails with a message if it isn't; the pinned profile already sets
+it). The reason is in the wiring doc: GPIO20/21 are used by the display.
+
+Pinned versions (what was tested): ESP32 core 3.3.12, GxEPD2 1.6.9, Adafruit GFX 1.13.0, Adafruit AHTX0 2.0.6,
+Adafruit BMP280 3.0.0, Adafruit BusIO 1.17.4, Adafruit Unified Sensor 1.1.15.
+
 The companion app is compiled into the firmware (`app_assets.h`), so this is the only build you need. You
 only touch Node if you change something in `app/`: see [docs/app.md](docs/app.md#changing-the-app).
-
-**USB CDC On Boot must be enabled** (the build fails with a message if it isn't). In the Arduino IDE that is
-*Tools → USB CDC On Boot → Enabled*. The reason is in the wiring doc: GPIO20/21 are used by the display.
-
-Libraries used in the tested build: GxEPD2 1.6.9, Adafruit GFX 1.13.0, Adafruit AHTX0 2.0.6,
-Adafruit BMP280 3.0.0 (plus their dependencies BusIO 1.17.4 and Unified Sensor 1.1.15).
 
 **Flash layout.** `partitions.csv` (next to the sketch, picked up automatically) gives the program a 2 MB
 partition and the daily logs ~1.9 MB. The firmware plus the embedded app is ~1.3 MB, about 62 % of that. The
@@ -135,7 +136,14 @@ temperature read high; `tempOffsetC` compensates.
 
 Done in the development sandbox, without hardware:
 
-* The sketch compiles for `esp32:esp32:esp32c3` with no warnings from project code.
+* The sketch compiles for `esp32:esp32:esp32c3` with no warnings from project code, **from a fresh clone with
+  no `secrets.h`**, and **from a brand-new arduino-cli environment** (empty directories, nothing installed): the
+  one `arduino-cli compile` downloaded the pinned core and libraries (about 1.8 GB) and built it.
+* **The images:** esptool reads them as valid ESP32-C3 images (DIO, 4 MB, checksums and hashes valid); the
+  partition table decodes as designed; the packaging script cross-checks that the full image contains the
+  exact bootloader, table and program at the right offsets, and that it leaves the logs partition alone.
+* **Boot path** reviewed for hangs with parts missing: a missing display cannot block the firmware (its busy-wait is
+  bounded and runs in its own task), and a board with a sensor missing still draws its screen.
 * **A-weighting filter:** checked against IEC 61672 reference values: within 0.15 dB up to 4 kHz and 0.6 dB at
   8 kHz (error grows above 10 kHz from the filter design). A 1 kHz tone at a known level gives the expected
   dB SPL, and the float32 filter matches a double-precision run.
@@ -153,7 +161,8 @@ Done in the development sandbox, without hardware:
 * The firmware's asset handler (`web.cpp`) is compiled and was checked against the ESP32 `WebServer`
   library source (gzip headers, `If-None-Match` handling), but not run.
 
-Not verified, because it needs the hardware: I2S capture from the mic, the e-ink panel driver and its
+Not verified: **that the firmware boots and runs**. An ESP32-C3 emulator could not be used here, so the first
+flash on a real board is the first time it runs. Also not verified, because it needs the hardware: I2S capture from the mic, the e-ink panel driver and its
 timing, the Wi-Fi/NTP/mDNS path, serving the app to a real phone over the device's web server, battery ADC
 accuracy, and the strapping-pin assumptions in the wiring doc.
 
@@ -172,8 +181,10 @@ firmware/statchain/   the Arduino sketch
   settings.*          persistent settings
   net.*  web.*        Wi-Fi/NTP/mDNS, HTTP server and API
 docs/wiring.md        pin map and wiring
+docs/flashing.md      flashing the firmware, first boot, troubleshooting
 docs/app.md           the companion app: running, hosting, data, tests
 app/                  the companion app source (plain ES modules)
-tools/                build-app.mjs (bundles app/ into app_assets.h), mock device, dev server
+tools/                build-app.mjs (bundles app/ into app_assets.h), package-firmware.mjs (flashable
+                      images), mock device, dev server
 tests/                unit, integration and end-to-end tests for the app
 ```
