@@ -1,0 +1,5 @@
+# arduino-cli picks these up when you run it from this folder:
+#   arduino-cli compile
+#   arduino-cli upload -p <port>
+# USB CDC On Boot is required (see config.h): GPIO20/21 are used by the display.
+default_fqbn: esp32:esp32:esp32c3:CDCOnBoot=cdc
