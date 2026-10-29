@@ -1,4 +1,4 @@
-// HTTP server: dashboard at / and a small JSON API for the companion app.
+// HTTP server: the companion app at / (served from flash, see app_assets.h) and the JSON API it uses.
 //
 //   GET  /api/state      latest readings, device status
 //   GET  /api/today      today's min / max / mean

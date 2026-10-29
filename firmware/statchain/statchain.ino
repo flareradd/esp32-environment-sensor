@@ -1,7 +1,7 @@
 // Statchain - keychain environment monitor for the ESP32-C3.
 //
 // Sound level, temperature, humidity, pressure and battery on a 2.13" e-ink display,
-// daily logs on flash, and a small web dashboard / JSON API over Wi-Fi.
+// daily logs on flash, and the companion web app + JSON API served over Wi-Fi.
 // Pin map: config.h and docs/wiring.md.
 
 #include "config.h"

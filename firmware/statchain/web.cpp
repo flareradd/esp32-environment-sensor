@@ -1,7 +1,7 @@
 #include "web.h"
 #include "app.h"
 #include "config.h"
-#include "dashboard.h"
+#include "app_assets.h"
 #include "logger.h"
 #include "net.h"
 #include "settings.h"
@@ -57,7 +57,32 @@ static void sendJson(const Json& j, int code = 200) {
   server.send(code, "application/json", j.done());
 }
 
-static void handleRoot() { server.send_P(200, "text/html", DASHBOARD_HTML); }
+// ---------------------------------------------------------------------------
+// The companion app, served from flash. The files are generated from app/ by tools/build-app.mjs
+// (gzipped, a handful of them so a page load is only a few requests).
+// ---------------------------------------------------------------------------
+static const AppAsset* findAsset(const String& uri) {
+  const char* want = (uri == "/") ? "/index.html" : uri.c_str();
+  for (size_t i = 0; i < APP_ASSET_COUNT; i++) {
+    if (strcmp(APP_ASSETS[i].path, want) == 0) return &APP_ASSETS[i];
+  }
+  return nullptr;
+}
+
+// Returns true if `uri` is part of the app and the reply has been sent.
+static bool serveAsset(const String& uri) {
+  const AppAsset* a = findAsset(uri);
+  if (!a) return false;
+  server.sendHeader("ETag", a->etag);
+  server.sendHeader("Cache-Control", "no-cache");  // revalidate every time: a 304 costs almost nothing
+  if (server.hasHeader("If-None-Match") && server.header("If-None-Match") == a->etag) {
+    server.send(304);
+    return true;
+  }
+  if (a->gzip) server.sendHeader("Content-Encoding", "gzip");
+  server.send_P(200, a->mime, (PGM_P)a->data, a->len);
+  return true;
+}
 
 static void handleState() {
   const time_t t = time(nullptr);
@@ -223,11 +248,11 @@ static void handleNotFound() {
     server.send(204);
     return;
   }
+  if (server.method() == HTTP_GET && serveAsset(server.uri())) return;  // "/" and the app's files
   sendJson(Json().str("error", "not found"), 404);
 }
 
 void webBegin() {
-  server.on("/", HTTP_GET, handleRoot);
   server.on("/api/state", HTTP_GET, handleState);
   server.on("/api/today", HTTP_GET, handleToday);
   server.on("/api/days", HTTP_GET, handleDays);
@@ -237,6 +262,8 @@ void webBegin() {
   server.on("/api/refresh", HTTP_POST, handleRefresh);
   server.on("/api/time", HTTP_POST, handleTime);
   server.onNotFound(handleNotFound);
+  static const char* kRequestHeaders[] = {"If-None-Match"};  // so the app's files can answer 304
+  server.collectHeaders(kRequestHeaders, 1);
   server.begin();
 }
 

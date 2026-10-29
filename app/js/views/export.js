@@ -103,6 +103,7 @@ export function mountExport(ctx, root) {
         h('p', { class: 'muted small' }, `Times are shown in ${ctx.tz().timeZone ?? 'this phone’s time zone'}.`)),
       h('section', { class: 'card settings-section' }, h('h2', null, 'Full backup'),
         h('p', { class: 'muted' }, 'Everything in the archive as one file, to keep safe or to move to another browser. Always the whole archive, whatever dates are chosen above.'),
+        window.isSecureContext ? null : h('p', { class: 'muted' }, 'The app is on a plain-http page, so the browser may clear its storage: a backup now and then is worth having.'),
         btn('Backup (JSON)', 'Lossless; can be restored below.', exportBackup)),
       restore);
   }

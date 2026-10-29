@@ -22,7 +22,7 @@ let browser, device, appServer, devPort, appPort, appUrl, deviceUrl;
 const problems = []; // console errors / uncaught exceptions seen in any test
 
 async function startDevice(port = 0) {
-  device = createMockDevice({ frozenAtMs: Date.parse(FROZEN), days: 45 });
+  device = createMockDevice({ frozenAtMs: Date.parse(FROZEN), days: 45, serveApp: true });
   devPort = await device.listen(port);
   deviceUrl = `http://127.0.0.1:${devPort}`;
 }
@@ -37,10 +37,16 @@ before(async () => {
 });
 after(async () => { await browser?.close(); await device?.close(); appServer?.close(); });
 
-// A fresh browser profile each time: empty IndexedDB / localStorage / service workers.
-async function open({ hash = '#/home', width = 390, height = 844, scheme = 'light', prefs = {}, url } = {}) {
+// Every test starts from the same moment, with the same device state and settings.
+async function resetDevice() {
   await control('clockValid=1&truncatedTail=0&loud=0&latencyMs=0&resetRequests=1&aht20=1&bmp280=1&mic=1&flash=1&hotspot=0&freezeAt=' + encodeURIComponent(FROZEN));
   await fetch(`${deviceUrl}/api/settings`, { method: 'POST', body: new URLSearchParams({ keepDays: '21', loudDb: '80' }) });
+}
+
+// The app served by tools/serve-app.mjs from its own origin (development / "a computer on the network").
+// A fresh browser profile each time: empty IndexedDB / localStorage / service workers.
+async function open({ hash = '#/home', width = 390, height = 844, scheme = 'light', prefs = {}, url } = {}) {
+  await resetDevice();
   const context = await browser.newContext({ viewport: { width, height }, colorScheme: scheme, acceptDownloads: true, serviceWorkers: 'allow' });
   await context.addInitScript(([d, extra]) => {
     if (!localStorage.getItem('statchain.deviceUrl')) localStorage.setItem('statchain.deviceUrl', JSON.stringify(d));
@@ -435,6 +441,94 @@ test('accessibility basics: landmarks, names, focus order, tap targets', async (
   assert.ok(r.chartNames.every((n) => /points from .* to .*latest/.test(n)), r.chartNames.join('|'));
   await page.keyboard.press('Tab');
   assert.ok(await page.evaluate(() => document.activeElement && document.activeElement !== document.body), 'Tab moves focus into the page');
+  await context.close();
+});
+
+
+// ---------------------------------------------------------------------------
+// The app served BY the device (the real deployment): same origin as the API, plain http.
+// ---------------------------------------------------------------------------
+async function openHosted({ host = '127.0.0.1', hash = '#/home', width = 390, height = 844 } = {}) {
+  await resetDevice();
+  const context = await browser.newContext({ viewport: { width, height }, acceptDownloads: true });
+  const page = await context.newPage();
+  const responses = [];
+  page.on('response', (r) => responses.push({ url: r.url(), status: r.status(), encoding: r.headers()['content-encoding'] }));
+  page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error' && !/net::ERR|Failed to load resource/i.test(m.text())) problems.push(`console: ${m.text()}`); });
+  await page.goto(`http://${host}:${devPort}/${hash}`);
+  return { page, context, responses, origin: `http://${host}:${devPort}` };
+}
+
+test('served by the device: the app opens at the device address and needs no setup', async () => {
+  const { page, context, responses, origin } = await openHosted();
+  await waitOnline(page);
+  await waitSynced(page); // first connect copies the archive; the pill says so while it runs
+  assert.equal(await page.evaluate(() => window.statchain.hostedByDevice), true);
+  assert.equal(await text(page, '.pill'), 'Connected');
+  await page.waitForSelector('.hero-num:not(.no-value)');
+  const s = await (await fetch(`${deviceUrl}/api/state`)).json();
+  assert.equal(await text(page, '.hero-num'), String(Math.round(s.soundDb)));
+  assert.equal(await page.evaluate(() => localStorage.getItem('statchain.deviceUrl')), null, 'no address was ever configured');
+  assert.ok(responses.every((r) => r.url.startsWith(origin)), 'every request went to the one origin: no CORS, no mixed content');
+
+  await page.click('a.tab[data-route="settings"]');
+  await page.waitForSelector('.settings-section:has-text("served by your Statchain itself")');
+  assert.equal(await page.locator('#addr').count(), 0, 'no address field to fill in');
+  await page.click('button:has-text("Check connection")');
+  await page.waitForSelector('.msg.ok:has-text("Connected to")');
+  assert.match(await text(page, '.settings.view, .view.settings'), /served by the device/);
+  await shot(page, 'hosted-settings');
+  await context.close();
+});
+
+test('on a plain-http origin (as the real device is) there is no service worker, but the archive still persists, with an honest note', async () => {
+  // statchain.test is not localhost, so the browser treats this page as an insecure context, like http://statchain.local
+  const { page, context } = await openHosted({ host: 'statchain.test', hash: '#/settings' });
+  assert.equal(await page.evaluate(() => window.isSecureContext), false);
+  assert.equal(await page.evaluate(() => 'serviceWorker' in navigator), false, 'service workers need a secure context');
+  await waitSynced(page);
+  assert.equal(await page.evaluate(() => window.statchain.store.persistent), true, 'IndexedDB works on http');
+  assert.equal((await page.evaluate(() => window.statchain.store.listSummaries())).length, 21);
+
+  await page.waitForSelector('.banner.info:has-text("Best effort on an http page")');
+  assert.match(await text(page, '.banner.info'), /statchain\.test/);
+  assert.match(await text(page, '.banner.info'), /Safari removes it after about a week/);
+  await shot(page, 'hosted-http-archive-note');
+
+  // it really is on disk: with auto-sync off, a reload still has every day
+  await page.evaluate(() => window.statchain.prefs.set('autoSync', false));
+  await page.reload();
+  await page.waitForSelector('.settings-section:has-text("21 days saved")');
+  assert.equal((await page.evaluate(() => window.statchain.store.listSummaries())).length, 21);
+  // Trends works from the archive on this origin
+  await page.click('a.tab[data-route="trends"]');
+  await page.waitForSelector('.chart-svg .line');
+  await page.click('a.tab[data-route="export"]');
+  await page.waitForSelector('text=may clear its storage');
+  await context.close();
+});
+
+test('a page load is a handful of small gzipped requests, then revalidated with 304s', async () => {
+  const { page, context, responses } = await openHosted();
+  await waitOnline(page);
+  await page.waitForLoadState('networkidle');
+  const assets = responses.filter((r) => !new URL(r.url).pathname.startsWith('/api/'));
+  const names = assets.map((r) => new URL(r.url).pathname);
+  assert.ok(assets.length <= 7, `${assets.length} asset requests: ${names.join(' ')}`);
+  for (const must of ['/', '/app.js', '/app.css']) assert.ok(names.includes(must), `${must} requested`);
+  for (const r of assets.filter((x) => /\/(app\.js|app\.css)$|\/$/.test(new URL(x.url).pathname))) assert.equal(r.encoding, 'gzip', r.url);
+
+  device.requests.length = 0;
+  await page.reload();
+  await waitOnline(page);
+  await page.waitForLoadState('networkidle');
+  const rev = device.requests.filter((r) => r.method === 'GET' && !r.path.startsWith('/api/'));
+  for (const p of ['/', '/app.js', '/app.css']) {
+    const hit = rev.find((r) => r.path === p);
+    assert.ok(hit, `${p} was re-requested on reload`);
+    assert.equal(hit.status, 304, `${p} is revalidated, not re-sent`);
+  }
   await context.close();
 });
 

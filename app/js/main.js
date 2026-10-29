@@ -26,11 +26,14 @@ const ROUTES = [
 async function main() {
   const prefs = createPrefs();
   const store = await openStore();
-  const api = createApi({ getBase: () => prefs.get('deviceUrl') });
+  // When the device itself serves this page (tools/build-app.mjs marks that build), the device is simply
+  // the page's own origin: no address to configure, and no mixed-content or CORS to worry about.
+  const hostedByDevice = !!document.querySelector('meta[name="statchain-host"]');
+  const api = createApi({ getBase: () => (hostedByDevice ? location.origin : prefs.get('deviceUrl')) });
   const sync = createSync({ api, store });
   const session = createSession({ api, sync, prefs });
   const ctx = {
-    api, store, sync, prefs, session,
+    api, store, sync, prefs, session, hostedByDevice,
     deviceTz: makeTz(DEVICE_TZ),
     tz: () => makeTz(prefs.get('tzMode') === 'phone' ? undefined : DEVICE_TZ),
   };
@@ -86,8 +89,9 @@ async function main() {
   route();
   session.start();
 
-  // ---- offline support (needs https or localhost)
-  if ('serviceWorker' in navigator && window.isSecureContext) {
+  // ---- offline support (needs https or localhost). Not when the device serves the app: that build ships no
+  // service worker (a plain-http origin cannot run one), so registering would only produce a 404.
+  if ('serviceWorker' in navigator && window.isSecureContext && !hostedByDevice) {
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(() => { /* the app works without it */ });
     navigator.serviceWorker.addEventListener('controllerchange', () => {

@@ -33,15 +33,13 @@ export function mountSettings(ctx, root) {
   let destroyed = false;
   const unsubs = [];
 
-  // ---- device address
+  // ---- how to reach the device
+  // Served by the device: its address is this page's own origin, so there is nothing to configure.
+  // Served from elsewhere (development, or a computer on the network): the address is a setting.
   const addr = h('input', { type: 'text', id: 'addr', inputmode: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
     value: prefs.get('deviceUrl'), placeholder: 'statchain.local or 192.168.1.50' });
   const testMsg = h('p', { class: 'muted', role: 'status' });
-  async function saveAndTest() {
-    const base = normalizeBase(addr.value);
-    if (!base) { testMsg.className = 'msg error'; testMsg.textContent = 'Enter an address such as statchain.local or 192.168.1.50.'; return; }
-    addr.value = base;
-    prefs.set('deviceUrl', base);
+  async function testConnection(base) {
     testMsg.className = 'muted'; testMsg.textContent = 'Connecting…';
     try {
       const s = await api.state();
@@ -53,12 +51,24 @@ export function mountSettings(ctx, root) {
       testMsg.replaceChildren(icon('warn', 16), ` ${describeError(e, base)}`);
     }
   }
-  const connection = section('Device',
-    h('label', { class: 'field stack', for: 'addr' }, h('span', null, 'Address'), addr,
-      h('span', { class: 'help' }, `Default ${DEFAULT_DEVICE_URL}. The IP address is shown in the device’s serial log.`)),
-    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: saveAndTest }, 'Save and test'),
-      h('button', { type: 'button', class: 'btn ghost', onclick: () => { addr.value = DEFAULT_DEVICE_URL; saveAndTest(); } }, 'Reset')),
-    testMsg);
+  async function saveAndTest() {
+    const base = normalizeBase(addr.value);
+    if (!base) { testMsg.className = 'msg error'; testMsg.textContent = 'Enter an address such as statchain.local or 192.168.1.50.'; return; }
+    addr.value = base;
+    prefs.set('deviceUrl', base);
+    await testConnection(base);
+  }
+  const connection = ctx.hostedByDevice
+    ? section('Device',
+      h('p', null, 'This app is served by your Statchain itself, at ', h('strong', null, location.host), '. There is nothing to set up.'),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: () => testConnection(location.origin) }, 'Check connection')),
+      testMsg)
+    : section('Device',
+      h('label', { class: 'field stack', for: 'addr' }, h('span', null, 'Address'), addr,
+        h('span', { class: 'help' }, `Default ${DEFAULT_DEVICE_URL}. The IP address is shown in the device’s serial log.`)),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: saveAndTest }, 'Save and test'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => { addr.value = DEFAULT_DEVICE_URL; saveAndTest(); } }, 'Reset')),
+      testMsg);
 
   // ---- device settings
   const form = h('form', { class: 'settings-form', novalidate: true });
@@ -173,7 +183,11 @@ export function mountSettings(ctx, root) {
   }
   unsubs.push(session.subscribe(paintArchive));
   const archive = section('Archive on this phone',
-    h('p', { class: 'muted' }, 'The device keeps only a few weeks of logs. This app copies each day to your phone so history is never lost.'),
+    h('p', { class: 'muted' }, 'The device keeps only a few weeks of logs. This app copies each day to this browser so history is not lost.'),
+    window.isSecureContext ? null : h('div', { class: 'banner info', role: 'note' }, icon('info', 20), h('div', { class: 'banner-text' },
+      h('strong', null, 'Best effort on an http page'),
+      h('p', null, `This page is served over http, so the browser treats its storage as less permanent: it may clear it when space is short, Safari removes it after about a week without a visit, and each address (${location.hostname} or an IP) keeps its own separate copy. `,
+        h('a', { href: '#/export' }, 'Back it up'), ' now and then.'))),
     archiveStats, gapsEl,
     h('div', { class: 'row' }, syncBtn),
     syncMsg,
@@ -195,7 +209,8 @@ export function mountSettings(ctx, root) {
       radios('tz', [['device', 'Sydney (device)'], ['phone', 'This phone']], prefs.get('tzMode'), (v) => prefs.set('tzMode', v))));
 
   const about = section('About',
-    h('p', { class: 'muted' }, `Statchain app ${APP_VERSION}`, ctx.session.view.state ? ` · device firmware ${ctx.session.view.state.fw}` : ''));
+    h('p', { class: 'muted' }, `Statchain app ${APP_VERSION}`, ctx.session.view.state ? ` · device firmware ${ctx.session.view.state.fw}` : '',
+      ctx.hostedByDevice ? ' · served by the device' : ''));
 
   root.replaceChildren(h('div', { class: 'view settings' }, connection, deviceSettings, archive, appearance, about));
   loadDeviceSettings();

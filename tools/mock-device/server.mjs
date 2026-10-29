@@ -138,8 +138,11 @@ function makeWorld(seed, tz) {
 // ---------------------------------------------------------------------------
 export function createMockDevice(opts = {}) {
   const o = {
-    seed: 1, days: 45, tz: 'Australia/Sydney', frozenAtMs: null, latencyMs: 0, ...opts,
+    seed: 1, days: 45, tz: 'Australia/Sydney', frozenAtMs: null, latencyMs: 0,
+    serveApp: false, // serve the built companion app at / like the firmware does (needs esbuild; see tools/build-app.mjs)
+    ...opts,
   };
+  let appAssets = null; // filled in by listen() when serveApp is set
   const tz = makeTz(o.tz);
   const world = makeWorld(o.seed, tz);
   const startReal = Date.now();
@@ -301,15 +304,33 @@ export function createMockDevice(opts = {}) {
     send(res, 200, { ok: true, now: tz.localString(now()), today: todayStr(), sim: { ...sim, sensors: undefined }, requests: q.has('requests') ? requests : undefined });
   }
 
+  // Same behaviour as the firmware's serveAsset(): ETag + "no-cache" (always revalidate), 304 on a match,
+  // gzip where the build gzipped. No CORS headers: only the API has them.
+  function sendAsset(req, res, a) {
+    const headers = { ETag: a.etag, 'Cache-Control': 'no-cache' };
+    if (req.headers['if-none-match'] === a.etag) { res.writeHead(304, headers); return res.end(); }
+    const body = a.gz ?? a.raw;
+    res.writeHead(200, { ...headers, 'Content-Type': a.mime, 'Content-Length': body.length, ...(a.gz ? { 'Content-Encoding': 'gzip' } : {}) });
+    res.end(body);
+  }
+
   function route(req, res, body) {
     const url = new URL(req.url, 'http://x');
     const path = url.pathname, method = req.method;
-    if (!path.startsWith('/__control')) requests.push({ method, path });
+    if (!path.startsWith('/__control')) {
+      const entry = { method, path };
+      requests.push(entry);
+      res.on('finish', () => { entry.status = res.statusCode; });
+    }
     const args = new URLSearchParams(url.search);
     if (body) for (const [k, v] of new URLSearchParams(body)) args.set(k, v);
 
     if (path.startsWith('/__control')) return handleControl(url, res);
 
+    if (method === 'GET' && appAssets) { // the app's own files ("/" is index.html), after the API routes below
+      const asset = appAssets.find((a) => a.path === (path === '/' ? '/index.html' : path));
+      if (asset) return sendAsset(req, res, asset);
+    }
     if (method === 'GET' && path === '/') return send(res, 200, '<!doctype html><title>Statchain (mock)</title><h1>Statchain mock device</h1>', 'text/html');
     if (method === 'GET' && path === '/api/state') return send(res, 200, state());
     if (method === 'GET' && path === '/api/today') return send(res, 200, today());
@@ -371,7 +392,10 @@ export function createMockDevice(opts = {}) {
   return {
     server, sim, settings, requests, tz,
     now, todayStr, listDays, dayRecords,
-    listen: (port = 0, host = '127.0.0.1') => new Promise((resolve) => server.listen(port, host, () => resolve(server.address().port))),
+    async listen(port = 0, host = '127.0.0.1') {
+      if (o.serveApp && !appAssets) appAssets = await (await import('../build-app.mjs')).buildApp();
+      return new Promise((resolve) => server.listen(port, host, () => resolve(server.address().port)));
+    },
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()); }),
   };
 }
@@ -383,15 +407,25 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), opt = {};
   const flag = (n) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : undefined; };
   if (argv.includes('--help')) {
-    console.log('usage: node server.mjs [--port 8765] [--days 45] [--seed 1] [--tz Australia/Sydney] [--frozen-at ISO] [--latency ms]');
+    console.log('usage: node server.mjs [--port 8765] [--days 45] [--seed 1] [--tz Australia/Sydney] [--frozen-at ISO] [--latency ms] [--no-app]');
+    console.log('  Serves the built companion app at / like the real device (needs `npm install`); --no-app turns that off.');
     process.exit(0);
   }
+  opt.serveApp = !argv.includes('--no-app');
   if (flag('days')) opt.days = +flag('days');
   if (flag('seed')) opt.seed = +flag('seed');
   if (flag('tz')) opt.tz = flag('tz');
   if (flag('latency')) opt.latencyMs = +flag('latency');
   if (flag('frozen-at')) opt.frozenAtMs = Date.parse(flag('frozen-at'));
-  const dev = createMockDevice(opt);
-  const port = await dev.listen(+(flag('port') ?? 8765), '0.0.0.0');
+  let dev = createMockDevice(opt), port;
+  try {
+    port = await dev.listen(+(flag('port') ?? 8765), '0.0.0.0');
+  } catch (e) {
+    if (!opt.serveApp) throw e;
+    console.log(`(could not build the app to serve - ${e.code ?? e.message}; run npm install. Serving the API only.)`);
+    dev = createMockDevice({ ...opt, serveApp: false });
+    port = await dev.listen(+(flag('port') ?? 8765), '0.0.0.0');
+  }
   console.log(`Mock Statchain listening on http://localhost:${port}  (local time ${dev.tz.localString(dev.now())})`);
+  if (opt.serveApp) console.log(`The app is served from the device address, like the real thing: open http://localhost:${port}/`);
 }

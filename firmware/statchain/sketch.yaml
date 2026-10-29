@@ -2,4 +2,6 @@
 #   arduino-cli compile
 #   arduino-cli upload -p <port>
 # USB CDC On Boot is required (see config.h): GPIO20/21 are used by the display.
-default_fqbn: esp32:esp32:esp32c3:CDCOnBoot=cdc
+# PartitionScheme=no_ota matches partitions.csv in this folder (which is what actually sets the flash layout);
+# it is here so the tool reports the size limit against the 2 MB app partition, not the 1.25 MB default.
+default_fqbn: esp32:esp32:esp32c3:CDCOnBoot=cdc,PartitionScheme=no_ota
