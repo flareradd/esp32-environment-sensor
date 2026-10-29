@@ -4,8 +4,9 @@ A keychain-sized environment monitor on an ESP32-C3. It measures sound level, te
 pressure and battery, shows them on a 2.13" e-ink screen, logs them to flash, and serves a small web
 dashboard and JSON API over Wi-Fi for a companion app.
 
-**Status:** firmware v0.1. It compiles cleanly and its logic is tested on a PC (see
-[Verification](#verification)), but **it has not been run on real hardware yet**. Expect some bring-up work.
+**Status:** firmware v0.1 and a browser companion app v0.1. Both are tested on a PC (see
+[Verification](#verification) and [docs/app.md](docs/app.md)), but **the firmware has not been run on real
+hardware yet**, and the app has only met the mock device so far. Expect some bring-up work.
 
 ## Hardware
 
@@ -93,6 +94,21 @@ There is **no authentication**: anyone on your network (or on the hotspot) can c
 fine for a prototype at home; add a token before using it anywhere shared. CORS is open so the
 companion app can call it from another origin.
 
+## Companion app
+
+A browser app in [`app/`](app) (no build step, no dependencies): live readings, a day summary, trends,
+settings and export. It copies each day's log from the device to your phone, because the device only keeps
+a few weeks. Try it without hardware:
+
+```sh
+node tools/mock-device/server.mjs     # a stand-in device on http://localhost:8765
+node tools/serve-app.mjs              # the app on http://localhost:8080
+```
+
+Set the device address to `http://localhost:8765` under Settings. With real hardware leave it at
+`http://statchain.local` (or use the device's IP). **Read [docs/app.md](docs/app.md) before hosting it
+anywhere:** a page served over https cannot reach the device's http API.
+
 ## Sound readings are an estimate
 
 Level is computed from the mic's datasheet sensitivity (−26 dBFS at 94 dB SPL, ±1 dB) with an A-weighting
@@ -116,6 +132,8 @@ Done in the development sandbox, without hardware:
   no-data states.
 * **Dashboard:** exercised in headless Chromium against a mock of the API.
 
+The companion app has 79 unit and integration tests plus a 20-scenario browser suite (see [docs/app.md](docs/app.md)).
+
 Not verified, because it needs the hardware: I2S capture from the mic, the e-ink panel driver and its
 timing, the Wi-Fi/NTP/mDNS path, battery ADC accuracy, and the strapping-pin assumptions in the wiring doc.
 
@@ -132,4 +150,8 @@ firmware/statchain/   the Arduino sketch
   settings.*          persistent settings
   net.*  web.*        Wi-Fi/NTP/mDNS, HTTP server and API
 docs/wiring.md        pin map and wiring
+docs/app.md           the companion app: running, hosting, data, tests
+app/                  the browser app (PWA)
+tools/                mock device and a static server for the app
+tests/                unit, integration and end-to-end tests for the app
 ```

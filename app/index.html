@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Statchain</title>
+<meta name="description" content="Companion app for the Statchain keychain environment monitor: live readings, daily history and trends.">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Statchain">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <a class="brand" href="#/home"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Statchain</span></a>
+  </header>
+  <main id="view" tabindex="-1" aria-live="off"></main>
+  <nav class="tabbar" id="tabbar" aria-label="Sections"></nav>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript><p style="padding:16px">Statchain needs JavaScript to show your readings.</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
